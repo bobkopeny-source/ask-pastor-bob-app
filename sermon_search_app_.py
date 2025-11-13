@@ -6,76 +6,69 @@ import json, gzip, os, re
 app = Flask(__name__)
 CORS(app)
 
-# Load DB once at startup (safe chunked)
-print("Loading database...")
-try:
-    with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-        SERMONS = json.load(f)
-    print(f"Loaded {len(SERMONS)} sermons")
-except Exception as e:
-    print(f"DB LOAD ERROR: {e}")
-    SERMONS = []
+# Tiny index: title, date, url, id, keywords
+INDEX = []
+DB = []
 
-def search_sermons(query, max_results=10):
-    if not SERMONS:
-        return [{'title': 'Error', 'passages': ['Database not loaded. Check logs.']}]
-    
+print("Building tiny index...")
+with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
+    DB = json.load(f)
+
+for s in DB:
+    title = s.get('title', '').lower()
+    words = re.findall(r'\b\w+\b', title)
+    INDEX.append({
+        'id': s.get('id'),
+        'title': s.get('title'),
+        'date': s.get('date', '')[:10],
+        'url': s.get('url', ''),
+        'keywords': [w for w in words if len(w) > 3]
+    })
+print(f"Index ready: {len(INDEX)} entries")
+
+def search_index(query):
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
-    if not words:
-        return []
-    
     results = []
-    for s in SERMONS:  # Process all, but fast
-        title = s.get('title', '').lower()
-        transcript = s.get('transcript', '').lower()
-        score = sum(title.count(w)*10 + transcript.count(w) for w in words)
+    for item in INDEX:
+        score = sum(item['keywords'].count(w) for w in words)
         if score > 0:
-            passages = [p.strip() for p in re.split(r'[.!?]', transcript) if any(w in p.lower() for w in words)][:3]
-            results.append({
-                'title': s.get('title'),
-                'date': s.get('date', '')[:10],
-                'url': s.get('url', ''),
-                'passages': passages
-            })
-        if len(results) >= max_results:
-            break
-    return results
+            results.append((score, item))
+    results.sort(reverse=True)
+    return [item for score, item in results[:10]]
+
+def get_sermon_by_id(sid):
+    for s in DB:
+        if s.get('id') == sid:
+            return s
+    return None
 
 @app.route('/')
 def home():
     return '''
     <h1>Ask Pastor Bob (1,712 Sermons)</h1>
-    <input id="q" placeholder="e.g., faith" style="width:100%;padding:12px;font-size:16px;">
-    <button onclick="search()" id="btn">Search</button>
-    <div id="status" style="margin:10px 0; color:#007bff;"></div>
+    <input id="q" placeholder="e.g., faith" style="width:100%;padding:12px;">
+    <button onclick="search()">Search</button>
+    <div id="status"></div>
     <div id="results"></div>
     <script>
     function search() {
         const q = document.getElementById('q').value;
-        const btn = document.getElementById('btn');
         const status = document.getElementById('status');
-        if (!q) return;
-        btn.disabled = true;
-        status.innerHTML = "Searching 1,712 sermons...";
+        status.innerHTML = "Searching...";
         fetch(`/api/search?q=${encodeURIComponent(q)}`)
             .then(r => r.json())
             .then(d => {
-                let html = d.length ? `<h2>${d.length} results for "${q}"</h2>` : '<p>No results found.</p>';
+                let html = d.length ? `<h2>${d.length} results</h2>` : '<p>No results.</p>';
                 d.forEach(r => {
                     html += `<div style="margin:20px 0;padding:15px;background:white;border-radius:8px;">
                         <h3>${r.title} (${r.date})</h3>
-                        ${r.url ? `<a href="${r.url}" target="_blank">Watch Video</a><br>` : ''}
-                        ${r.passages.map(p => `<p>${p}</p>`).join('')}
+                        ${r.url ? `<a href="${r.url}" target="_blank">Watch Video</a>` : ''}
+                        <p><i>Full transcript available on click.</i></p>
                     </div>`;
                 });
                 document.getElementById('results').innerHTML = html;
                 status.innerHTML = "";
-                btn.disabled = false;
-            })
-            .catch(e => {
-                status.innerHTML = "Error — check Render logs.";
-                btn.disabled = false;
             });
     }
     </script>
@@ -84,5 +77,13 @@ def home():
 @app.route('/api/search')
 def api():
     q = request.args.get('q', '')
-    results = search_sermons(q)
-    return jsonify(results)
+    results = search_index(q)
+    return jsonify([{
+        'title': r['title'],
+        'date': r['date'],
+        'url': r['url']
+    } for r in results])
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
