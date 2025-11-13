@@ -2,20 +2,26 @@
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import json, gzip, os, re
+from functools import lru_cache
 
 app = Flask(__name__)
 CORS(app)
 
-print("Loading 1,712 sermons...")
-with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-    SERMONS = json.load(f)
-print(f"Loaded {len(SERMONS)} sermons")
+# === MEMORY-SAFE: Load only when needed ===
+@lru_cache(maxsize=1)
+def load_sermons():
+    print("Loading 1,712 sermons (memory-safe)...")
+    with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
+        data = json.load(f)
+    print(f"Loaded {len(data)} sermons")
+    return data
 
 def search_sermons(query, max_results=10):
+    sermons = load_sermons()
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
     results = []
-    for s in SERMONS:
+    for s in sermons:
         title = s.get('title', '').lower()
         transcript = s.get('transcript', '').lower()
         score = sum(title.count(w)*10 + transcript.count(w) for w in words)
