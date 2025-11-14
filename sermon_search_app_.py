@@ -10,9 +10,13 @@ CORS(app)
 # Load limited DB at startup (no timeout)
 print("Loading 500 sermons...")
 try:
+    import gzip
+    import json
+    import itertools
+
     with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-        data = json.load(f)
-    SERMONS = data[:500]  # Limit for speed
+        # Stream only first 500 items without loading full list
+        SERMONS = list(itertools.islice(json.load(f), 500))
     print(f"Loaded {len(SERMONS)} sermons")
 except Exception as e:
     print(f"Load error: {e}")
