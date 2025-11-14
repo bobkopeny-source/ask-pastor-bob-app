@@ -7,7 +7,7 @@ from functools import lru_cache
 app = Flask(__name__)
 CORS(app)
 
-# Load only 500 sermons at startup (no timeout)
+# Load limited DB at startup (no timeout)
 print("Loading 500 sermons...")
 try:
     with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
@@ -51,7 +51,7 @@ def home():
         status.innerHTML = "Searching...";
         fetch(`/api?q=${encodeURIComponent(q)}`, {timeout: 10000})
             .then(r => {
-                if (!r.ok) throw new Error('Network response was not ok');
+                if (!r.ok) throw new Error('Network error: ' + r.status);
                 return r.json();
             })
             .then(d => {
@@ -78,4 +78,4 @@ def api():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)  # Debug off for production
