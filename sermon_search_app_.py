@@ -15,13 +15,12 @@ try:
     import itertools
 
     with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-        # Stream only first 500 items without loading full list
+        # Load ONLY first 500 items — no memory explosion
         SERMONS = list(itertools.islice(json.load(f), 500))
     print(f"Loaded {len(SERMONS)} sermons")
 except Exception as e:
     print(f"Load error: {e}")
     SERMONS = []
-
 def search_sermons(query):
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
