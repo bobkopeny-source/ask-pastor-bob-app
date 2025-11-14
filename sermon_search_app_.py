@@ -8,6 +8,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Load limited DB at startup (no timeout)
+
 print("Loading 500 sermons...")
 try:
     import gzip
@@ -15,13 +16,13 @@ try:
     import itertools
 
     with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-        # Load ONLY first 500 items — no memory explosion
+        # Load ONLY first 500 — no memory crash
         SERMONS = list(itertools.islice(json.load(f), 500))
     print(f"Loaded {len(SERMONS)} sermons")
 except Exception as e:
     print(f"Load error: {e}")
     SERMONS = []
-def search_sermons(query):
+    def search_sermons(query):
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
     results = []
