@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
-import json, gzip, os, re
-from functools import lru_cache
+import json
+import gzip
+import os
+import itertools
 
 app = Flask(__name__)
 CORS(app)
 
 # Load limited DB at startup (no timeout)
-
 print("Loading 500 sermons...")
 try:
-    import gzip
-    import json
-    import itertools
-
     with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
         # Load ONLY first 500 — no memory crash
         SERMONS = list(itertools.islice(json.load(f), 500))
@@ -22,13 +19,15 @@ try:
 except Exception as e:
     print(f"Load error: {e}")
     SERMONS = []
-    def search_sermons(query):
+
+
+def search_sermons(query):
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
     results = []
     for s in SERMONS:
         title = s.get('title', '').lower()
-        score = sum(title.count(w)*10 for w in words)
+        score = sum(title.count(w) * 10 for w in words)
         if score > 0:
             results.append({
                 'title': s.get('title'),
@@ -38,6 +37,7 @@ except Exception as e:
         if len(results) >= 10:
             break
     return results
+
 
 @app.route('/')
 def home():
@@ -53,7 +53,7 @@ def home():
         const status = document.getElementById('status');
         if (!q) return;
         status.innerHTML = "Searching...";
-        fetch(`/api?q=${encodeURIComponent(q)}`, {timeout: 10000})
+        fetch(`/api?q=${encodeURIComponent(q)}`)
             .then(r => {
                 if (!r.ok) throw new Error('Network error: ' + r.status);
                 return r.json();
@@ -69,10 +69,14 @@ def home():
                 document.getElementById('results').innerHTML = html;
                 status.innerHTML = "";
             })
-            .catch(e => { status.innerHTML = "Timeout — try a shorter query."; console.log(e); });
+            .catch(e => { 
+                status.innerHTML = "Timeout — try a shorter query."; 
+                console.log(e); 
+            });
     }
     </script>
     '''
+
 
 @app.route('/api')
 def api():
@@ -80,6 +84,8 @@ def api():
     results = search_sermons(q)
     return jsonify(results)
 
+
+# HEROKU / DIGITALOCEAN: Use $PORT, bind to 0.0.0.0, debug OFF
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)  # Debug off for production
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
