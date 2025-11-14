@@ -7,35 +7,22 @@ from functools import lru_cache
 app = Flask(__name__)
 CORS(app)
 
-# Debug logging
-print("=== APP STARTUP ===")
-print(f"Files: {os.listdir('.')}")
-print("=== END STARTUP ===")
-
-# Lazy load with error handling
-@lru_cache(maxsize=1)
-def load_sermons():
-    print("=== LOADING DB ===")
-    try:
-        if not os.path.exists('PASTOR_BOB_COMPLETE_1712.json.gz'):
-            print("DB FILE MISSING!")
-            return []
-        with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
-            data = json.load(f)
-        print(f"=== LOADED {len(data)} SERMONS ===")
-        return data
-    except Exception as e:
-        print(f"=== DB ERROR: {e} ===")
-        return []
+# Load only 500 sermons at startup (no timeout)
+print("Loading 500 sermons...")
+try:
+    with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
+        data = json.load(f)
+    SERMONS = data[:500]  # Limit for speed
+    print(f"Loaded {len(SERMONS)} sermons")
+except Exception as e:
+    print(f"Load error: {e}")
+    SERMONS = []
 
 def search_sermons(query):
-    print(f"=== SEARCH: '{query}' ===")
-    sermons = load_sermons()
-    print(f"=== {len(sermons)} SERMONS AVAILABLE ===")
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
     results = []
-    for s in sermons[:100]:  # Limit for speed
+    for s in SERMONS:
         title = s.get('title', '').lower()
         score = sum(title.count(w)*10 for w in words)
         if score > 0:
@@ -44,27 +31,27 @@ def search_sermons(query):
                 'date': s.get('date', '')[:10],
                 'url': s.get('url', '')
             })
-            print(f"=== MATCH: {s.get('title')[:50]} ===")
-    print(f"=== {len(results)} RESULTS ===")
+        if len(results) >= 10:
+            break
     return results
 
 @app.route('/')
 def home():
     return '''
-    <h1>Ask Pastor Bob (1,712 Sermons)</h1>
+    <h1>Ask Pastor Bob (500 Sermons)</h1>
     <input id="q" placeholder="e.g., faith" style="width:100%;padding:12px;font-size:16px;">
-    <button onclick="search()">Search</button>
+    <button onclick="search()" style="padding:12px 20px;background:#007bff;color:white;border:none;cursor:pointer;font-size:16px;">Search</button>
     <div id="status" style="margin:10px 0;color:#007bff;"></div>
-    <div id="results"></div>
+    <div id="results" style="margin-top:20px;"></div>
     <script>
     function search() {
         const q = document.getElementById('q').value;
         const status = document.getElementById('status');
         if (!q) return;
         status.innerHTML = "Searching...";
-        fetch(`/api?q=${encodeURIComponent(q)}`)
+        fetch(`/api?q=${encodeURIComponent(q)}`, {timeout: 10000})
             .then(r => {
-                if (!r.ok) throw new Error('API error: ' + r.status);
+                if (!r.ok) throw new Error('Network response was not ok');
                 return r.json();
             })
             .then(d => {
@@ -78,7 +65,7 @@ def home():
                 document.getElementById('results').innerHTML = html;
                 status.innerHTML = "";
             })
-            .catch(e => { status.innerHTML = "Error: " + e.message; console.log(e); });
+            .catch(e => { status.innerHTML = "Timeout — try a shorter query."; console.log(e); });
     }
     </script>
     '''
@@ -91,4 +78,4 @@ def api():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
