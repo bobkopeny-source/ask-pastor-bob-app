@@ -7,25 +7,35 @@ from functools import lru_cache
 app = Flask(__name__)
 CORS(app)
 
-# Lazy load DB (no startup crash)
+# Debug logging
+print("=== APP STARTUP ===")
+print(f"Files: {os.listdir('.')}")
+print("=== END STARTUP ===")
+
+# Lazy load with error handling
 @lru_cache(maxsize=1)
 def load_sermons():
-    print("Loading 1,712 sermons on first search...")
+    print("=== LOADING DB ===")
     try:
+        if not os.path.exists('PASTOR_BOB_COMPLETE_1712.json.gz'):
+            print("DB FILE MISSING!")
+            return []
         with gzip.open('PASTOR_BOB_COMPLETE_1712.json.gz', 'rt', encoding='utf-8') as f:
             data = json.load(f)
-        print(f"Loaded {len(data)} sermons")
+        print(f"=== LOADED {len(data)} SERMONS ===")
         return data
     except Exception as e:
-        print(f"DB error: {e}")
+        print(f"=== DB ERROR: {e} ===")
         return []
 
 def search_sermons(query):
+    print(f"=== SEARCH: '{query}' ===")
     sermons = load_sermons()
+    print(f"=== {len(sermons)} SERMONS AVAILABLE ===")
     q = query.lower()
     words = [w for w in q.split() if len(w) > 3]
     results = []
-    for s in sermons:
+    for s in sermons[:100]:  # Limit for speed
         title = s.get('title', '').lower()
         score = sum(title.count(w)*10 for w in words)
         if score > 0:
@@ -34,18 +44,18 @@ def search_sermons(query):
                 'date': s.get('date', '')[:10],
                 'url': s.get('url', '')
             })
-        if len(results) >= 10:
-            break
-    return sorted(results, key=lambda x: -sum(x['title'].lower().count(w) for w in words))
+            print(f"=== MATCH: {s.get('title')[:50]} ===")
+    print(f"=== {len(results)} RESULTS ===")
+    return results
 
 @app.route('/')
 def home():
     return '''
     <h1>Ask Pastor Bob (1,712 Sermons)</h1>
     <input id="q" placeholder="e.g., faith" style="width:100%;padding:12px;font-size:16px;">
-    <button onclick="search()" style="padding:12px 20px;background:#007bff;color:white;border:none;cursor:pointer;font-size:16px;">Search</button>
+    <button onclick="search()">Search</button>
     <div id="status" style="margin:10px 0;color:#007bff;"></div>
-    <div id="results" style="margin-top:20px;"></div>
+    <div id="results"></div>
     <script>
     function search() {
         const q = document.getElementById('q').value;
@@ -53,19 +63,22 @@ def home():
         if (!q) return;
         status.innerHTML = "Searching...";
         fetch(`/api?q=${encodeURIComponent(q)}`)
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) throw new Error('API error: ' + r.status);
+                return r.json();
+            })
             .then(d => {
-                let html = d.length ? `<h2>${d.length} results</h2>` : '<p>No results. Try "faith" or "Israel".</p>';
+                let html = d.length ? `<h2>${d.length} results</h2>` : '<p>No results. Try "faith".</p>';
                 d.forEach(r => {
-                    html += `<div style="margin:20px 0;padding:15px;background:white;border-radius:8px;box-shadow:0 2px 5px #ddd;">
+                    html += `<div style="margin:20px 0;padding:15px;background:white;border-radius:8px;">
                         <h3>${r.title} (${r.date})</h3>
-                        ${r.url ? `<a href="${r.url}" target="_blank" style="color:#007bff;">Watch Video</a>` : ''}
+                        ${r.url ? `<a href="${r.url}" target="_blank">Watch Video</a>` : ''}
                     </div>`;
                 });
                 document.getElementById('results').innerHTML = html;
                 status.innerHTML = "";
             })
-            .catch(() => { status.innerHTML = "Error"; });
+            .catch(e => { status.innerHTML = "Error: " + e.message; console.log(e); });
     }
     </script>
     '''
@@ -77,6 +90,5 @@ def api():
     return jsonify(results)
 
 if __name__ == '__main__':
-    # DigitalOcean requires port 8080
     port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
